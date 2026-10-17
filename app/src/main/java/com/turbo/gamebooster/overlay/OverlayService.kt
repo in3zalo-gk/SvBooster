@@ -11,10 +11,8 @@ import android.app.Service
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -295,8 +293,7 @@ class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
     private fun addPluginOverlay(content: @Composable () -> Unit) {
         val composeView = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            ViewTreeLifecycleOwner.set(this, this@OverlayService)
-            ViewTreeSavedStateRegistryOwner.set(this, this@OverlayService)
+            setOverlayViewTreeOwners(this, this@OverlayService)
             setContent { content() }
         }
         val params = baseParams(
@@ -366,5 +363,22 @@ class CrosshairView(ctx: Context, private val color: Int, private val style: Int
                 c.drawLine(cx, cy + gap, cx, cy + r, p)
             }
         }
+    }
+}
+
+/**
+ * Set AndroidX Compose host owners without linking against their moved view-tree helper symbols.
+ * The owner interfaces remain provided by the AndroidX lifecycle/saved-state dependencies.
+ */
+private fun setOverlayViewTreeOwners(view: android.view.View, owner: Any) {
+    listOf(
+        "androidx.lifecycle.ViewTreeLifecycleOwner",
+        "androidx.savedstate.ViewTreeSavedStateRegistryOwner"
+    ).forEach { className ->
+        val ownerClass = Class.forName(className)
+        val setter = ownerClass.methods.firstOrNull { method ->
+            method.name == "set" && method.parameterTypes.size == 2
+        } ?: error("AndroidX view-tree owner setter not found: $className")
+        setter.invoke(null, view, owner)
     }
 }
