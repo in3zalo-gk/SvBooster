@@ -1,0 +1,9 @@
+title: SvBooster Beta — Plugins
+description: Como entender a arquitetura, criar e importar plugins para o SvBooster.
+theme: jekyll-theme-cayman
+relative_links:
+  enabled: true
+  collections: false
+plugins:
+  - jekyll-relative-links
+markdown: kramdown
