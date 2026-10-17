@@ -1,65 +1,46 @@
-# ⚡ Sv Booster — Game Booster para Android
+# SvBooster — Game Booster modular para Android
 
-App Android (Kotlin + Jetpack Compose) que deixa os jogos mais lisos abaixando a resolução e
-travando o FPS de um jogo escolhido, com várias ferramentas extras.
+Fork técnico do SvBooster com Kotlin, Jetpack Compose, Shizuku/Depuração por Wi‑Fi, diagnóstico de permissões e uma base modular para plugins. O app mantém as funções existentes de perfis por jogo, downscale/FPS, modo turbo e HUD.
 
-## Funções
+## O que foi refatorado
 
-**Por jogo (perfil salvo para cada um)**
-- Resolução do jogo: 100% → 30% (menos pixels = GPU mais folgada = mais FPS e menos calor)
-- Limite de FPS: 30 / 40 / 45 / 60 / 90 / 120 ou sem limite
-- Modo do sistema: Desempenho / Padrão / Bateria (Game Mode do Android)
-- Predefinições: Equilibrado, Máx. FPS, Celular fraco, Economia
-- Limpar RAM, Não perturbe, desligar animações, forçar Hz máximo
-- **Forçar resolução**: para jogos que ignoram a redução por app — baixa a resolução da tela inteira
-  enquanto o jogo está aberto e volta ao normal sozinho quando você sai dele
-- Botão **BOOST & JOGAR**: aplica tudo, reinicia e abre o jogo, com relatório do que funcionou
+- **Abas dinâmicas:** Início → categorias presentes nos plugins registrados → Ajustes.
+- **Contrato público:** módulo `:plugin-api` com `SvPlugin`, `PluginCategory`, `HostApi`, `GameProfile` e callbacks de ciclo de vida.
+- **Exemplos Compose:** `:plugin-optimization` (downscale via shell, com validação do pacote) e `:plugin-monitoring` (telemetria básica e HUD customizado).
+- **Diagnóstico Shizuku:** UI separa instalação, binder (`pingBinder`) e autorização do app; orienta início pela Depuração sem fio.
+- **Overlay:** HUD de teste em Ajustes; a permissão de sobreposição é reavaliada ao voltar ao app. O overlay Compose registra LifecycleOwner e SavedStateRegistryOwner.
+- **Home:** painel de RAM/temperatura/estado Shizuku e botão Boost Rápido.
+- **Bateria Motorola:** instruções para deixar Shizuku e SvBooster sem restrições de bateria.
+- **Docs da comunidade:** guia de plugin, referência da API, roadmap e nota de integração WX em `docs/`.
 
-**Ferramentas**
-- Limpeza de RAM com MB liberados
-- Teste de ping (Google, Cloudflare, AWS São Paulo, AWS EUA ou servidor próprio) com jitter e perda
-- Resolução global (tela inteira) — para jogos que ignoram a redução por app
-- Mira personalizada sobre o jogo (cruz, ponto, círculo; 6 cores; tamanho ajustável)
-- HUD flutuante: temperatura, RAM, bateria e hora
-- “Restaurar tudo” (também na notificação e no bloco **Restaurar jogo** das Configurações Rápidas)
-- HUD arrastável com **temperatura da CPU** (com Shizuku/root) e da bateria
-- **Atalho na tela inicial** por jogo: 1 toque = Boost & jogar
+## Limite importante desta entrega
 
-**Arquivos**
-- Acesso a todo o armazenamento (permissão “Acesso a todos os arquivos”)
-- Android/data e Android/obb via Shizuku/root
-- Navegar, editar arquivos de texto (.json, .xml, .ini, .cfg…), renomear, apagar, criar pasta
-- Backup automático `.bak` antes de salvar uma edição
+Os exemplos são Android Library Modules compilados dentro do APK host e registrados no `PluginRegistry`. **Eles ainda não são APKs externos baixáveis nem carregados em runtime.** WXDynamicPlugin declara suporte a Compose, mas o upstream exige integração do runtime, versão/artefatos e servidor de distribuição. Não afirmamos que o carregamento dinâmico esteja concluído. Verifique `docs/WX_RUNTIME.md` antes de distribuir ou prometer plugins externos.
 
-## Por que precisa do Shizuku
+## Compilar
 
-O Android não permite que um app comum mude a resolução/FPS de outro app. O
-[Shizuku](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api) dá ao app o
-mesmo poder de um comando ADB, **sem root**. Root também funciona.
-Sem nenhum dos dois, o app roda em **modo básico** (limpar RAM, não perturbe, HUD, mira, ping).
+- Requisitos: JDK 17, Android SDK 35 e Android Studio/Gradle Wrapper.
+- Host: `./gradlew :app:assembleDebug`
+- Contrato e exemplos: `./gradlew :plugin-api:build :plugin-optimization:build :plugin-monitoring:build`
+- Testes: `./gradlew test` e, com emulador conectado, `./gradlew connectedDebugAndroidTest`
+- O workflow `.github/workflows/build.yml` compila o host e publica o APK como artefato do GitHub Actions por 30 dias. Abra a execução concluída, baixe `SvBooster-beta-debug` em **Artifacts** e instale o APK de debug.
 
-Resolução/FPS por jogo usa `cmd game set` (Android 13+) ou `device_config game_overlay` (Android 12).
-Alguns fabricantes/jogos ignoram — aí use a **Resolução global**.
+APK host: `app/build/outputs/apk/debug/app-debug.apk`. Os módulos de plugin de exemplo, por serem bibliotecas, não produzem APKs separados. Esta beta ainda precisa ser validada por build e teste em aparelho; não use para aplicar comandos que não entenda.
 
-## Como gerar o APK
+## Configuração do Shizuku / Depuração sem fio
 
-### Opção 1 — Android Studio (PC)
-1. Abra a pasta `SvBooster` no Android Studio (Ladybug ou mais novo).
-2. Espere o Gradle sincronizar e clique em ▶ Run, ou *Build → Build APK(s)*.
+1. Instale Shizuku da fonte oficial e abra-o.
+2. Em Opções do desenvolvedor, habilite **Depuração sem fio**; siga o fluxo de pareamento do app Shizuku e inicie o serviço.
+3. No SvBooster, confira os três estados em Ajustes: aplicativo instalado, binder disponível e permissão concedida. Autorize o app na tela do Shizuku.
+4. Em Motorola, defina **Shizuku** e **SvBooster** como **Sem restrições** no uso de bateria.
+5. Para o modo turbo próprio do SvBooster, use o cartão “Modo Turbo” e siga o pareamento guiado por notificação.
 
-### Opção 2 — GitHub (sem instalar nada, dá até pelo celular)
-1. Crie um repositório no GitHub e envie todos os arquivos desta pasta.
-2. Abra a aba **Actions** → o workflow **Build APK** roda sozinho.
-3. Quando terminar (~5 min), vá em **Releases** no repositório e baixe o `SvBooster.apk`
-   direto pelo celular. Permita “instalar apps desconhecidos” quando o Android pedir.
+Em alguns aparelhos MediaTek, uma versão do Shizuku pode falhar ao iniciar. Confira a versão oficial atual e as notas de compatibilidade antes de instalar APKs alternativos. [Releases oficiais do Shizuku](https://github.com/RikkaApps/Shizuku/releases).
 
-## Estrutura
-```
-app/src/main/java/com/turbo/gamebooster/
-  MainActivity.kt          navegação e abas
-  shell/Shell.kt           comandos via Shizuku/root
-  core/Data.kt             perfis, apps instalados, RAM/bateria
-  core/Booster.kt          boost, limpeza, ajustes do sistema, ping
-  overlay/OverlayService.kt HUD e mira sobre o jogo
-  ui/                      telas (Jogos, Perfil, Ferramentas, Ajustes)
-```
+## Desenvolver plugins
+
+Comece por [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md). A referência da API está em [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md), e o roadmap em [`docs/ROADMAP.md`](docs/ROADMAP.md). Plugins não devem declarar permissões privilegiadas próprias; devem operar pela `HostApi`, mostrar erros e reverter ajustes quando o jogo termina.
+
+## Licença e créditos
+
+Preserve a licença e os avisos do projeto original. O upstream escolhido para a futura camada de carregamento é [WXDynamicPlugin](https://github.com/wgllss/WXDynamicPlugin). Confirme licenças e compatibilidade de dependências antes de publicar binários derivados.

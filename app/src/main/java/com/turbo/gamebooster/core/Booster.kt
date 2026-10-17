@@ -11,6 +11,7 @@ import android.os.StatFs
 import android.provider.Settings
 import android.view.Display
 import com.turbo.gamebooster.overlay.OverlayService
+import com.turbo.gamebooster.plugins.PluginGameEvents
 import com.turbo.gamebooster.shell.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -42,7 +43,9 @@ object Booster {
         } catch (e: Throwable) {
             log("Erro nos ajustes: ${e.message ?: e.javaClass.simpleName}")
         }
-        log(if (launch(ctx, pkg)) "Abrindo o jogo… bom jogo! 🎮" else "Não consegui abrir o jogo (ele ainda está instalado?)")
+        val launched = launch(ctx, pkg)
+        if (launched) PluginGameEvents.started(pkg)
+        log(if (launched) "Abrindo o jogo… bom jogo! 🎮" else "Não consegui abrir o jogo (ele ainda está instalado?)")
     }
 
     private suspend fun applyProfile(ctx: Context, pkg: String, p: GameProfile, log: (String) -> Unit) {

@@ -4,7 +4,14 @@ import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -29,6 +36,7 @@ import com.turbo.gamebooster.R
 import com.turbo.gamebooster.core.Prefs
 import com.turbo.gamebooster.core.SystemInfo
 import com.turbo.gamebooster.core.Tweaks
+import com.turbo.gamebooster.plugins.PluginGameEvents
 import com.turbo.gamebooster.shell.Shell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,12 +46,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /** Mostra HUD (temperatura, RAM, bateria, hora) e mira por cima do jogo. */
-class OverlayService : Service() {
+class OverlayService : LifecycleService(), SavedStateRegistryOwner {
+
+    private val savedStateController = SavedStateRegistryController.create(this)
+    override val savedStateRegistry get() = savedStateController.savedStateRegistry
+
 
     companion object {
         private const val CH = "turbo_overlay"
@@ -53,6 +66,17 @@ class OverlayService : Service() {
         @Volatile
         var running = false
             private set
+
+        @Volatile
+        private var pluginContent: (@Composable () -> Unit)? = null
+
+        fun showPlugin(ctx: Context, content: @Composable () -> Unit) {
+            pluginContent = content
+            ContextCompat.startForegroundService(
+                ctx,
+                Intent(ctx, OverlayService::class.java).putExtra("plugin_overlay", true)
+            )
+        }
 
         fun start(ctx: Context, hud: Boolean, crosshair: Boolean, watchPkg: String? = null) {
             val i = Intent(ctx, OverlayService::class.java)
@@ -74,10 +98,13 @@ class OverlayService : Service() {
 
     private var hudJob: Job? = null
     private var cpuTemp: Float? = null
+    private var cpuLoad: Int? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
+        savedStateController.performAttach()
+        savedStateController.performRestore(null)
         super.onCreate()
         wm = getSystemService(WindowManager::class.java)
         running = true
@@ -105,8 +132,12 @@ class OverlayService : Service() {
         if (!Settings.canDrawOverlays(this) && intent?.getStringExtra("watch") == null) {
             stopSelf(); return START_NOT_STICKY
         }
-        if (intent?.getBooleanExtra("hud", false) == true) addHud()
-        if (intent?.getBooleanExtra("cross", false) == true) addCrosshair()
+        if (intent?.getBooleanExtra("plugin_overlay", false) == true) {
+            pluginContent?.let(::addPluginOverlay)
+        } else {
+            if (intent?.getBooleanExtra("hud", false) == true) addHud()
+            if (intent?.getBooleanExtra("cross", false) == true) addCrosshair()
+        }
         intent?.getStringExtra("watch")?.let { startWatch(it) }
         if (views.isEmpty() && watchJob == null) stopSelf()
         return START_NOT_STICKY
@@ -115,6 +146,7 @@ class OverlayService : Service() {
     override fun onDestroy() {
         running = false
         removeViews()
+        pluginContent = null
         scope.cancel()
         super.onDestroy()
     }
@@ -130,6 +162,7 @@ class OverlayService : Service() {
                 misses = if (top != null && top != pkg) misses + 1 else 0
                 if (misses >= 2) {
                     Tweaks.restoreAll(applicationContext) // resolução, animações, Hz, desempenho e não perturbe
+                    PluginGameEvents.stopped(pkg)
                     watchJob = null
                     if (views.isEmpty()) stopSelf()
                     break
@@ -222,6 +255,7 @@ class OverlayService : Service() {
             var n = 0
             while (isActive) {
                 if (n % 2 == 0 && Shell.hasShell()) cpuTemp = Tweaks.cpuTemp()
+                cpuLoad = withContext(Dispatchers.IO) { SystemInfo.cpuUsagePercent() }
                 updateHud()
                 n++
                 delay(2000)
@@ -239,9 +273,29 @@ class OverlayService : Service() {
             hot < 43f -> "🟡"
             else -> "🔴"
         }
-        val cpu = cpuTemp?.let { "CPU ${"%.0f".format(it)}°C  " } ?: ""
-        tv.text = "$tempColor ${cpu}BAT ${"%.1f".format(s.batteryTempC)}°C  RAM ${"%.1f".format(s.ramUsedMb / 1024f)}/" +
+        val cpu = cpuLoad?.let { "CPU $it%  " } ?: "CPU —  "
+        val soc = cpuTemp?.let { "SoC ${"%.0f".format(it)}°C  " } ?: ""
+        tv.text = "$tempColor ${cpu}${soc}BAT ${"%.1f".format(s.batteryTempC)}°C  RAM ${"%.1f".format(s.ramUsedMb / 1024f)}/" +
             "${"%.1f".format(s.ramTotalMb / 1024f)}G  🔋${s.batteryPct}%${if (s.charging) "⚡" else ""}  ${clock.format(Date())}"
+    }
+
+    private fun addPluginOverlay(content: @Composable () -> Unit) {
+        val composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            ViewTreeLifecycleOwner.set(this, this@OverlayService)
+            ViewTreeSavedStateRegistryOwner.set(this, this@OverlayService)
+            setContent { content() }
+        }
+        val params = baseParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.START
+        ).apply {
+            flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            x = dp(12); y = dp(48)
+        }
+        wm.addView(composeView, params)
+        views += composeView
     }
 
     private fun addCrosshair() {

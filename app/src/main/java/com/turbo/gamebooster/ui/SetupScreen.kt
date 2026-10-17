@@ -45,8 +45,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.turbo.gamebooster.core.Tweaks
+import com.turbo.gamebooster.overlay.OverlayService
 import com.turbo.gamebooster.shell.Shell
 import kotlinx.coroutines.launch
+
+@Composable
+private fun rememberResumePermissionState(refreshKey: Int, checkPermission: () -> Boolean): Boolean =
+    remember(refreshKey) { checkPermission() }
 
 @Composable
 private fun StatusLine(ok: Boolean, text: String) {
@@ -64,9 +69,13 @@ private fun StatusLine(ok: Boolean, text: String) {
 fun SetupScreen(tick: Int, onChanged: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val installed = remember(tick) {
+        try { ctx.packageManager.getApplicationInfo("moe.shizuku.privileged.api", 0); true }
+        catch (_: Exception) { false }
+    }
     val running = remember(tick) { Shell.shizukuRunning() }
     val granted = remember(tick) { Shell.shizukuGranted() }
-    val overlay = remember(tick) { Settings.canDrawOverlays(ctx) }
+    val overlay = rememberResumePermissionState(tick) { Settings.canDrawOverlays(ctx) }
     val dnd = remember(tick) { Tweaks.dndAllowed(ctx) }
     val notif = remember(tick) {
         Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
@@ -90,19 +99,23 @@ fun SetupScreen(tick: Int, onChanged: () -> Unit) {
     ) {
         TurboModeCard(tick, onChanged)
 
-        SectionCard("Shizuku (opcional)", Icons.Filled.AdminPanelSettings) {
-            StatusLine(running, if (running) "Shizuku rodando" else "Shizuku não está rodando")
-            StatusLine(granted, if (granted) "Permissão concedida — recursos avançados liberados" else "Permissão pendente")
+        SectionCard("Shizuku", Icons.Filled.AdminPanelSettings) {
+            StatusLine(installed, if (installed) "1/3 • Aplicativo Shizuku instalado" else "1/3 • Shizuku não instalado")
+            StatusLine(running, if (running) "2/3 • Binder disponível (pingBinder OK)" else "2/3 • Binder indisponível — inicie o Shizuku")
+            StatusLine(granted, if (granted) "3/3 • Permissão concedida" else "3/3 • Permissão deste app pendente")
             Spacer(Modifier.height(6.dp))
-            Hint(
-                "Não precisa: o Modo Turbo acima já faz tudo. Use o Shizuku só se você já tiver ele instalado."
-            )
+            Hint("Para iniciar sem root: abra o Shizuku → Iniciar por depuração sem fio. Em Opções do desenvolvedor, habilite Depuração sem fio e faça o pareamento indicado pelo Shizuku; depois volte aqui e conceda a permissão.")
+            if (!running && installed) Hint("Se o binder não iniciar, confira se a Depuração sem fio continua ativa e tente iniciar novamente no app Shizuku. Em aparelhos MediaTek/Moto G24, se a versão da Play Store falhar, tente a versão oficial mais recente disponibilizada no GitHub e verifique as notas de compatibilidade do dispositivo.")
+            Spacer(Modifier.height(10.dp))
             Spacer(Modifier.height(10.dp))
             when {
                 granted -> {}
-                running -> Button(onClick = { Shell.requestShizuku() }, modifier = Modifier.fillMaxWidth()) {
+                running -> Button(onClick = { Shell.requestShizuku(); onChanged() }, modifier = Modifier.fillMaxWidth()) {
                     Text("Conceder permissão")
                 }
+                installed -> OutlinedButton(onClick = {
+                    ctx.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let(::open)
+                }, modifier = Modifier.fillMaxWidth()) { Text("Abrir Shizuku e iniciar") }
                 else -> {
                     Button(onClick = {
                         open(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api")))
@@ -129,6 +142,14 @@ fun SetupScreen(tick: Int, onChanged: () -> Unit) {
             if (!overlay) OutlinedButton(onClick = { openOverlaySettings(ctx) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Permitir sobreposição")
             }
+            OutlinedButton(onClick = {
+                if (Settings.canDrawOverlays(ctx)) OverlayService.start(ctx, hud = true, crosshair = false)
+                else openOverlaySettings(ctx)
+            }, modifier = Modifier.fillMaxWidth()) { Text(if (overlay) "Testar HUD" else "Testar HUD • conceder permissão") }
+            Hint("Na Motorola, defina Shizuku e Sv Booster como ‘Sem restrições’ em Bateria → Uso da bateria para reduzir encerramentos em segundo plano.")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) OutlinedButton(onClick = {
+                open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }, modifier = Modifier.fillMaxWidth()) { Text("Abrir otimização de bateria") }
             StatusLine(dnd, "Acesso ao Não perturbe")
             if (!dnd) OutlinedButton(onClick = {
                 open(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))

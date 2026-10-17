@@ -148,6 +148,30 @@ object AppRepo {
 }
 
 object SystemInfo {
+    private var previousCpuTotal: Long? = null
+    private var previousCpuIdle: Long? = null
+
+    /** Best-effort total CPU utilization from /proc/stat; null when the OEM restricts access. */
+    @Synchronized
+    fun cpuUsagePercent(): Int? {
+        return try {
+            val fields = java.io.File("/proc/stat").bufferedReader().use { it.readLine() }
+                .trim().split(Regex("\\s+")).drop(1).map { it.toLong() }
+            if (fields.size < 4) null else {
+                // guest/guest_nice are already included in user/nice, so exclude them from total.
+                val total = fields.take(8).sum()
+                val idle = fields[3] + (fields.getOrNull(4) ?: 0L)
+                val oldTotal = previousCpuTotal
+                val oldIdle = previousCpuIdle
+                previousCpuTotal = total
+                previousCpuIdle = idle
+                if (oldTotal == null || oldIdle == null || total <= oldTotal) null
+                else (((total - oldTotal - (idle - oldIdle)).toDouble() / (total - oldTotal)) * 100.0)
+                    .toInt().coerceIn(0, 100)
+            }
+        } catch (_: Exception) { null }
+    }
+
     data class Snapshot(
         val ramUsedMb: Long,
         val ramTotalMb: Long,
