@@ -39,7 +39,7 @@ Em alguns aparelhos MediaTek, uma versão do Shizuku pode falhar ao iniciar. Con
 
 ## Desenvolver plugins
 
-Comece por [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md). A referência da API está em [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md), e o roadmap em [`docs/ROADMAP.md`](docs/ROADMAP.md). Plugins não devem declarar permissões privilegiadas próprias; devem operar pela `HostApi`, mostrar erros e reverter ajustes quando o jogo termina.
+Comece por [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md). Veja também [`docs/IMPORTAR_PLUGINS.md`](docs/IMPORTAR_PLUGINS.md), a referência da API em [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md) e o [`roadmap`](docs/ROADMAP.md). Na beta, importar APK externo ainda não está disponível: exemplos são integrados ao host durante a compilação. Plugins não devem declarar permissões privilegiadas próprias; devem operar pela `HostApi`, mostrar erros e reverter ajustes quando o jogo termina.
 
 ## Licença e créditos
 

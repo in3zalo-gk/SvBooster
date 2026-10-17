@@ -7,6 +7,7 @@ SvBooster é um host Android de otimização de jogos com Kotlin, Jetpack Compos
 ## Guias
 
 - [Criar um primeiro plugin](PLUGIN_GUIDE.md)
+- [Importar plugins](IMPORTAR_PLUGINS.md)
 - [Referência da HostApi](PLUGIN_API.md)
 - [Categorias e roadmap](ROADMAP.md)
 - [Estado da integração WXDynamicPlugin](WX_RUNTIME.md)

@@ -7,7 +7,10 @@ import android.app.PendingIntent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.lifecycle.LifecycleService
+import android.app.Service
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -52,8 +55,10 @@ import java.util.Date
 import java.util.Locale
 
 /** Mostra HUD (temperatura, RAM, bateria, hora) e mira por cima do jogo. */
-class OverlayService : LifecycleService(), SavedStateRegistryOwner {
+class OverlayService : Service(), LifecycleOwner, SavedStateRegistryOwner {
 
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
     private val savedStateController = SavedStateRegistryController.create(this)
     override val savedStateRegistry get() = savedStateController.savedStateRegistry
 
@@ -106,11 +111,15 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         savedStateController.performAttach()
         savedStateController.performRestore(null)
         super.onCreate()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         wm = getSystemService(WindowManager::class.java)
         running = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        }
         startForegroundCompat()
         when (intent?.action) {
             ACTION_STOP -> {
@@ -148,6 +157,10 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         removeViews()
         pluginContent = null
         scope.cancel()
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        }
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         super.onDestroy()
     }
 

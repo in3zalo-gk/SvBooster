@@ -40,9 +40,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -74,7 +71,10 @@ import com.turbo.gamebooster.ui.SvLogo
 import com.turbo.gamebooster.ui.Tag
 import com.turbo.gamebooster.ui.ToolsScreen
 import com.turbo.gamebooster.ui.TurboTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -119,7 +119,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Refresh on every return from Android Settings, including overlay/Shizuku settings.
         tick.intValue++
     }
 
@@ -149,10 +148,12 @@ private fun App(tick: Int, refresh: () -> Unit) {
     val hostApi = remember(context) { PluginHostApi(context) }
 
     when (val current = screen) {
-        is Screen.Profile -> ProfileScreen(current.pkg, mode, onSetup = { screen = Screen.Tabs; selectedPage = "settings" }) {
-            screen = Screen.Tabs
-            refresh()
-        }
+        is Screen.Profile -> ProfileScreen(
+            current.pkg,
+            mode,
+            onSetup = { screen = Screen.Tabs; selectedPage = "settings" },
+            onBack = { screen = Screen.Tabs; refresh() }
+        )
         Screen.Picker -> PickerScreen { screen = Screen.Tabs; refresh() }
         Screen.Tabs -> Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -160,8 +161,10 @@ private fun App(tick: Int, refresh: () -> Unit) {
             bottomBar = {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     NavigationBarItem(
-                        selected = selectedPage == "home", onClick = { selectedPage = "home" },
-                        icon = { Icon(Icons.Filled.SportsEsports, null) }, label = { Text("Início", maxLines = 1, fontSize = 11.sp) },
+                        selected = selectedPage == "home",
+                        onClick = { selectedPage = "home" },
+                        icon = { Icon(Icons.Filled.SportsEsports, null) },
+                        label = { Text("Início", maxLines = 1, fontSize = 11.sp) },
                         colors = navColors()
                     )
                     categories.forEach { category ->
@@ -174,8 +177,10 @@ private fun App(tick: Int, refresh: () -> Unit) {
                         )
                     }
                     NavigationBarItem(
-                        selected = selectedPage == "settings", onClick = { selectedPage = "settings" },
-                        icon = { Icon(Icons.Filled.Settings, null) }, label = { Text("Ajustes", maxLines = 1, fontSize = 11.sp) },
+                        selected = selectedPage == "settings",
+                        onClick = { selectedPage = "settings" },
+                        icon = { Icon(Icons.Filled.Settings, null) },
+                        label = { Text("Ajustes", maxLines = 1, fontSize = 11.sp) },
                         colors = navColors()
                     )
                 }
@@ -197,14 +202,12 @@ private fun App(tick: Int, refresh: () -> Unit) {
                         val category = categories.firstOrNull { it.name == selectedPage }
                         val categoryPlugins = plugins.filter { it.category == category }
                         Column(Modifier.fillMaxSize()) {
-                            categoryPlugins.forEach { plugin ->
-                                PluginScreen(plugin, hostApi)
-                            }
+                            categoryPlugins.forEach { plugin -> PluginScreen(plugin, hostApi) }
                         }
                     }
                 }
             }
-        )
+        }
     }
 }
 
