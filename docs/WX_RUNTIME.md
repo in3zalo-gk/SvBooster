@@ -1,24 +1,23 @@
-# WXDynamicPlugin: avaliação e trabalho restante
+# Runtime de plugins: formato `.plgs` e status do WXDynamicPlugin
 
-A referência escolhida é [wgllss/WXDynamicPlugin](https://github.com/wgllss/WXDynamicPlugin). O projeto declara suporte a Compose e carregamento dinâmico. A documentação do upstream descreve uma arquitetura com runtime, geração de artefatos/versionamento e hospedagem de arquivos; portanto, adicionar somente uma dependência Maven ou chamar um `ClassLoader` não constitui integração correta.
+WXDynamicPlugin foi avaliado como alternativa de runtime, mas **não é dependência do carregador nesta implementação**. O host usa o formato próprio `.plgs` e `DexClassLoader` do Android para importar e carregar uma classe Compose que implemente a API `:plugin-api`.
 
-## O que já está no fork
+## O que o host suporta agora
 
-- Contrato de UI Compose em `:plugin-api`.
-- Registro e navegação por categorias usando `SvPlugin`.
-- Dois exemplos carregados pelo registro do host: `:plugin-optimization` e `:plugin-monitoring`.
-- Uma ponte `HostApi` para shell, HUD, perfil e eventos.
+- Pacote com extensão `.plgs` e exatamente três itens: `manifest.json`, `classes.dex` e `icon.png`.
+- Versões `formatVersion=1` e `apiVersion=1`, validação dos campos de identidade/categoria, limite de tamanho, validação básica do DEX e do PNG.
+- Armazenamento privado no app e carregamento do DEX com o classloader do host como pai, para reutilizar a mesma identidade de `SvPlugin` e das bibliotecas Compose.
+- Uma aba inferior por plugin, com nome e ícone do pacote; exemplos também passam pelo mesmo formato e carregador.
+- Remoção do pacote importado na tela Ajustes. Como a VM mantém classes carregadas, é preciso reiniciar o app para descarregá-las totalmente.
 
-## O que ainda falta para runtime de APK externo
+O `.plgs` é um contêiner, não um APK instalável. Renomear APK/ZIP não basta: o host exige extensão e conteúdo interno válidos.
 
-- Integrar os módulos/runtime oficiais do WXDynamicPlugin e fixar um commit/release compatível com AGP, Kotlin e Compose usados pelo host.
-- Definir o mecanismo de entrada dos plugins, preservando identidade de classe do `:plugin-api` e versão binária do contrato.
-- Configurar serviço de distribuição, manifesto/índice de versões, geração/assinatura dos pacotes e política de atualização/rollback.
-- Implementar download autenticado, verificação criptográfica, armazenamento local, falhas offline, compatibilidade host-plugin e tela de loja/instalação.
-- Adicionar testes de carregamento em aparelho real, upgrade, remoção, falha de plugin e regressão de Compose.
+## Limites importantes
 
-Até que esses pontos sejam implementados e auditados, **não use a etiqueta “plugin APK carregado dinamicamente” para os exemplos atuais**. Eles são módulos de biblioteca integrados em build-time, não APKs separados. A tela de categorias é dinâmica em relação aos plugins registrados no host, não em relação a APKs instalados.
+A validação estrutural **não é uma sandbox nem uma verificação de assinatura**. O código DEX executa no processo e com a identidade do SvBooster; um plugin malicioso pode tentar usar os acessos do host. Importe apenas plugins revisados e de origem confiável. Esta beta não possui loja, catálogo remoto, assinatura criptográfica, sandbox por processo, rollback automático nem isolamento de permissões.
 
-## Decisão técnica
+Antes de qualquer distribuição pública, falta definir assinatura e confiança de origem, política de atualização/rollback, compatibilidade binária da API, auditoria de plugins e testes reais de instalação, remoção, atualização, exceções e regressão Compose. O suporte a `.plgs` é real, mas esses limites precisam ser comunicados.
 
-WXDynamicPlugin é preferido a Shadow por declarar suporte nativo a Compose; Shadow exigiria adaptar conteúdo Compose via `ComposeView`. A integração foi isolada do contrato para que o adaptador futuro não altere a API dos plugins. Consulte o README upstream para a configuração atual e valide cada instrução contra o commit que for fixado.
+## Trabalho futuro do WXDynamicPlugin
+
+O projeto [WXDynamicPlugin](https://github.com/wgllss/WXDynamicPlugin) continua apenas uma possibilidade avaliada para substituir/adaptar o carregador. Não está integrado, e os pacotes `.plgs` atuais não devem ser descritos como “WX plugins”. Qualquer migração futura precisa fixar uma versão compatível e preservar o formato/documentação ou fornecer conversão explícita.

@@ -4,28 +4,28 @@ Fork técnico do SvBooster com Kotlin, Jetpack Compose, Shizuku/Depuração por 
 
 ## O que foi refatorado
 
-- **Abas dinâmicas:** Início → categorias presentes nos plugins registrados → Ajustes.
+- **Abas por plugin:** Início → uma aba individual por `.plgs`, com o ícone próprio do pacote → Ajustes. A barra inferior desliza horizontalmente quando há muitos plugins.
 - **Contrato público:** módulo `:plugin-api` com `SvPlugin`, `PluginCategory`, `HostApi`, `GameProfile` e callbacks de ciclo de vida.
-- **Exemplos Compose:** `:plugin-optimization` (downscale via shell, com validação do pacote) e `:plugin-monitoring` (telemetria básica e HUD customizado).
+- **Plugins `.plgs`:** `:plugin-optimization`, `:plugin-monitoring` e `:plugin-diagnostics` viram pacotes separados com manifesto, DEX e ícone; todos são carregados pelo mesmo runtime dos plugins importados. O diagnóstico tem uma aba própria e testa comandos shell somente de leitura via Shizuku, com status e tempo por comando.
 - **Diagnóstico Shizuku:** UI separa instalação, binder (`pingBinder`) e autorização do app; orienta início pela Depuração sem fio.
 - **Overlay:** HUD de teste em Ajustes; a permissão de sobreposição é reavaliada ao voltar ao app. O overlay Compose registra LifecycleOwner e SavedStateRegistryOwner.
 - **Home:** painel de RAM/temperatura/estado Shizuku e botão Boost Rápido.
 - **Bateria Motorola:** instruções para deixar Shizuku e SvBooster sem restrições de bateria.
 - **Docs da comunidade:** guia de plugin, referência da API, roadmap e nota de integração WX em `docs/`.
 
-## Limite importante desta entrega
+## Formato e limite de segurança
 
-Os exemplos são Android Library Modules compilados dentro do APK host e registrados no `PluginRegistry`. **Eles ainda não são APKs externos baixáveis nem carregados em runtime.** WXDynamicPlugin declara suporte a Compose, mas o upstream exige integração do runtime, versão/artefatos e servidor de distribuição. Não afirmamos que o carregamento dinâmico esteja concluído. Verifique `docs/WX_RUNTIME.md` antes de distribuir ou prometer plugins externos.
+O host importa arquivos `.plgs` com manifesto, `classes.dex` e `icon.png`; os exemplos também são empacotados nesse formato e publicados como artefato do Actions. Não se instala APK de plugin: APK é apenas insumo do empacotamento. O carregador valida extensão, estrutura, limites de tamanho e API, mas **não é sandbox nem comprova assinatura/autoria**. Plugins executam código dentro do processo do host; importe somente arquivos de fontes confiáveis.
 
 ## Compilar
 
 - Requisitos: JDK 17, Android SDK 35 e Android Studio/Gradle Wrapper.
-- Host: `./gradlew :app:assembleDebug`
-- Contrato e exemplos: `./gradlew :plugin-api:build :plugin-optimization:build :plugin-monitoring:build`
+- Host e pacotes embutidos `.plgs`: `./gradlew :app:assembleDebug`
+- Contrato e plugins de exemplo: `./gradlew :plugin-api:build :plugin-optimization:assembleDebug :plugin-monitoring:assembleDebug :plugin-diagnostics:assembleDebug`
 - Testes: `./gradlew test` e, com emulador conectado, `./gradlew connectedDebugAndroidTest`
-- O workflow `.github/workflows/build.yml` compila o host e publica o APK como artefato do GitHub Actions por 30 dias. Abra a execução concluída, baixe `SvBooster-beta-debug` em **Artifacts** e instale o APK de debug.
+- O workflow `.github/workflows/build.yml` compila o host e publica `SvBooster-beta-debug` e `SvBooster-example-plugins-plgs` como artefatos do GitHub Actions por 30 dias. O segundo inclui os três pacotes `.plgs` de exemplo.
 
-APK host: `app/build/outputs/apk/debug/app-debug.apk`. Os módulos de plugin de exemplo, por serem bibliotecas, não produzem APKs separados. Esta beta ainda precisa ser validada por build e teste em aparelho; não use para aplicar comandos que não entenda.
+APK host: `app/build/outputs/apk/debug/app-debug.apk`. Os `.plgs` de exemplo ficam em `app/build/generated/pluginAssets/plugins/` e também são publicados em um artefato separado do Actions.
 
 ## Configuração do Shizuku / Depuração sem fio
 
@@ -39,7 +39,7 @@ Em alguns aparelhos MediaTek, uma versão do Shizuku pode falhar ao iniciar. Con
 
 ## Desenvolver plugins
 
-Comece por [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md). Veja também [`docs/IMPORTAR_PLUGINS.md`](docs/IMPORTAR_PLUGINS.md), a referência da API em [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md) e o [`roadmap`](docs/ROADMAP.md). Na beta, importar APK externo ainda não está disponível: exemplos são integrados ao host durante a compilação. Plugins não devem declarar permissões privilegiadas próprias; devem operar pela `HostApi`, mostrar erros e reverter ajustes quando o jogo termina.
+Comece por [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md). Veja também [`docs/IMPORTAR_PLUGINS.md`](docs/IMPORTAR_PLUGINS.md), a referência da API em [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md) e o [`roadmap`](docs/ROADMAP.md). APKs não são importados: o usuário seleciona arquivos `.plgs`. Plugins devem solicitar ações pela `HostApi`, mostrar erros e reverter ajustes quando o jogo termina.
 
 ## Licença e créditos
 

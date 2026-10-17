@@ -23,13 +23,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.turbo.gamebooster.core.Tweaks
 import com.turbo.gamebooster.overlay.OverlayService
+import com.turbo.gamebooster.plugins.LoadedPlugin
 import com.turbo.gamebooster.shell.Shell
 import kotlinx.coroutines.launch
 
@@ -66,7 +72,14 @@ private fun StatusLine(ok: Boolean, text: String) {
 }
 
 @Composable
-fun SetupScreen(tick: Int, onChanged: () -> Unit) {
+fun SetupScreen(
+    tick: Int,
+    onChanged: () -> Unit,
+    plugins: List<LoadedPlugin>,
+    pluginMessage: String?,
+    onImportPlugin: () -> Unit,
+    onRemovePlugin: (LoadedPlugin) -> Unit
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val installed = remember(tick) {
@@ -83,6 +96,7 @@ fun SetupScreen(tick: Int, onChanged: () -> Unit) {
         ) == PackageManager.PERMISSION_GRANTED
     }
     var rootMsg by remember { mutableStateOf<String?>(null) }
+    var pendingRemoval by remember { mutableStateOf<LoadedPlugin?>(null) }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { onChanged() }
 
     fun open(intent: Intent) = try {
@@ -98,6 +112,28 @@ fun SetupScreen(tick: Int, onChanged: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         TurboModeCard(tick, onChanged)
+
+        SectionCard("Plugins", Icons.Filled.Extension) {
+            Text("Cada plugin é um pacote .plgs com código, manifesto e ícone próprios.")
+            Button(onClick = onImportPlugin, modifier = Modifier.fillMaxWidth()) {
+                Text("Importar arquivo .plgs")
+            }
+            Text("Só arquivos .plgs válidos são aceitos; APK, ZIP e outros formatos serão recusados.", fontSize = 12.sp, color = Muted)
+            Text("Importe apenas plugins de fontes confiáveis: eles rodam código no processo do SvBooster e usam os acessos que você autorizou.", fontSize = 12.sp, color = Amber)
+            pluginMessage?.let { Text(it, color = Cyan, fontSize = 12.sp) }
+            plugins.forEach { entry ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.plugin.name, fontWeight = FontWeight.SemiBold)
+                        Text("v${entry.plugin.version} • ${if (entry.builtIn) "incluído" else ".plgs importado"}", fontSize = 11.sp, color = Muted)
+                    }
+                    if (!entry.builtIn) IconButton(onClick = { pendingRemoval = entry }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remover ${entry.plugin.name}", tint = Amber)
+                    }
+                }
+            }
+            if (plugins.isEmpty()) Text("Nenhum plugin carregado ainda.", color = Muted, fontSize = 12.sp)
+        }
 
         SectionCard("Shizuku", Icons.Filled.AdminPanelSettings) {
             StatusLine(installed, if (installed) "1/3 • Aplicativo Shizuku instalado" else "1/3 • Shizuku não instalado")
@@ -169,5 +205,16 @@ fun SetupScreen(tick: Int, onChanged: () -> Unit) {
                     "• Ao terminar, use 'Restaurar tudo' em Ferramentas ou na notificação."
             )
         }
+    }
+    pendingRemoval?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text("Remover plugin?") },
+            text = { Text("O pacote ${entry.plugin.name} será removido do armazenamento do app. Reinicie o SvBooster para descarregar o código da memória.") },
+            confirmButton = {
+                TextButton(onClick = { onRemovePlugin(entry); pendingRemoval = null }) { Text("Remover") }
+            },
+            dismissButton = { TextButton(onClick = { pendingRemoval = null }) { Text("Cancelar") } }
+        )
     }
 }

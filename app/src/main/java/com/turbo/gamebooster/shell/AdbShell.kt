@@ -197,13 +197,22 @@ object AdbShell {
         }
     }
 
-    /** Teste rápido para a tela de Ajustes. */
+    /** Teste curto e sem efeitos colaterais; evita comandos lentos que não medem a permissão Shizuku. */
     suspend fun selfTest(): String {
-        val r = Shell.run("id -un; getprop ro.build.version.release; wm size", timeoutMs = 8000)
-        if (!r.ok) return "Falhou (${Shell.mode()}): ${com.turbo.gamebooster.core.Tweaks.friendly(r.err.ifBlank { r.out })}"
-        // Confere se o sistema deixa mudar configurações (a Xiaomi bloqueia sem uma chave extra).
-        val w = Shell.run("settings put global sv_booster_check 1 && settings delete global sv_booster_check", timeoutMs = 8000)
-        return if (w.ok) "OK ✓ Tudo liberado (${Shell.mode()})\n${r.out.trim()}"
-        else "Conectado, mas: ${com.turbo.gamebooster.core.Tweaks.friendly(w.err.ifBlank { w.out })}"
+        val mode = Shell.mode()
+        val r = Shell.run(
+            "printf 'SVB_SHIZUKU_TEST\\n'",
+            "id -un",
+            "id -u",
+            timeoutMs = 8_000
+        )
+        if (!r.ok) {
+            val detail = if (r.code == -2) {
+                "o comando básico de identidade não retornou em 8 s. O binder e a permissão podem estar ativos, mas o processo shell não respondeu; reinicie o serviço Shizuku e tente novamente."
+            } else com.turbo.gamebooster.core.Tweaks.friendly(r.err.ifBlank { r.out })
+            return "Falhou ($mode): $detail"
+        }
+        return "OK ✓ O processo privilegiado respondeu ($mode)\n${r.out.trim()}"
     }
+
 }

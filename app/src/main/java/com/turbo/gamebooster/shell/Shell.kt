@@ -92,11 +92,15 @@ object Shell {
         val err = StringBuffer()
         val tOut = Thread { try { out.append(p.inputStream.bufferedReader().readText()) } catch (_: Throwable) {} }
         val tErr = Thread { try { err.append(p.errorStream.bufferedReader().readText()) } catch (_: Throwable) {} }
+        // Keep drainers from holding the process alive if a remote Shizuku process fails to close its pipes.
+        tOut.isDaemon = true
+        tErr.isDaemon = true
         tOut.start(); tErr.start()
         val finished = try { p.waitFor(timeoutMs, TimeUnit.MILLISECONDS) } catch (_: Throwable) { false }
         if (!finished) {
             try { p.destroy() } catch (_: Throwable) {}
-            return Result(-2, out.toString(), "Tempo esgotado")
+            try { p.destroyForcibly() } catch (_: Throwable) {}
+            return Result(-2, out.toString(), "Tempo esgotado após ${timeoutMs / 1000}s")
         }
         tOut.join(1500); tErr.join(1500)
         return Result(p.exitValue(), out.toString(), err.toString())

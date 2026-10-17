@@ -10,4 +10,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "SvBooster"
-include(":app", ":plugin-api", ":plugin-optimization", ":plugin-monitoring")
+include(":app", ":plugin-api", ":plugin-optimization", ":plugin-monitoring", ":plugin-diagnostics")

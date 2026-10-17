@@ -1,21 +1,29 @@
-# Como criar seu primeiro plugin
+# Criar um plugin `.plgs` para o SvBooster
 
-Este guia cria um módulo Compose que usa `:plugin-api` e pede ao host para executar uma ação. Os módulos de exemplo atuais são Android Library incluídas no app; o processo de empacotar e carregar APK externo depende da integração WXDynamicPlugin documentada em [WX_RUNTIME.md](WX_RUNTIME.md).
+O repositório inclui exemplos de otimização, monitoramento e diagnóstico. O diagnóstico Shizuku é um exemplo útil de execução pelo mesmo runtime dinâmico dos pacotes importados; consulte [`PLUGIN_DIAGNOSTICS.md`](PLUGIN_DIAGNOSTICS.md).
 
-## 1. Adicione um módulo
+Plugins são carregados de arquivos `.plgs`. Cada um tem sua aba inferior e seu ícone PNG próprios. O formato desta versão contém `manifest.json`, `classes.dex` e `icon.png`; o plugin implementa o contrato versionado em `:plugin-api` e desenha a interface com Jetpack Compose.
 
-No `settings.gradle.kts`:
+## 1. Prepare um módulo de plugin
+
+Use `com.android.application`, Kotlin Android e o plugin Compose configurado no projeto. O módulo é uma aplicação de build usada para gerar DEX; não será instalada no celular. Configure `minSdk 26`, `compileSdk 35` e Java 17.
+
+Dependências da API do host e do Compose devem ser `compileOnly`, não `implementation`, para não empacotar cópias incompatíveis no DEX do plugin:
 
 ```kotlin
-include(":plugin-example")
+dependencies {
+    compileOnly(project(":plugin-api"))
+    compileOnly(platform("androidx.compose:compose-bom:2024.12.01"))
+    compileOnly("androidx.compose.material3:material3")
+    compileOnly("androidx.compose.foundation:foundation")
+    compileOnly("androidx.compose.ui:ui")
+}
 ```
 
-Crie `plugin-example/build.gradle.kts` seguindo `plugin-optimization/build.gradle.kts`: Android Library, Kotlin Android, plugin Compose, SDK 35 e dependência `implementation(project(":plugin-api"))`. Para o exemplo ficar visível no host desta versão, adicione também `implementation(project(":plugin-example"))` em `app/build.gradle.kts`.
-
-## 2. Implemente `SvPlugin`
+## 2. Implemente a classe de entrada
 
 ```kotlin
-object ExampleGpuPlugin : SvPlugin {
+object GpuPlugin : SvPlugin {
     override val id = "com.example.svbooster.gpu"
     override val name = "GPU experimental"
     override val version = "1.0.0"
@@ -28,7 +36,6 @@ object ExampleGpuPlugin : SvPlugin {
         Column {
             Button(onClick = {
                 scope.launch {
-                    // Use somente uma operação documentada e acionada pelo usuário.
                     val result = hostApi.executeShell("cmd game list")
                     status = if (result.success) result.stdout else result.stderr
                 }
@@ -39,30 +46,42 @@ object ExampleGpuPlugin : SvPlugin {
 }
 ```
 
-Para uma alteração de GPU, use somente comandos e opções suportados pelo Android e pelo fabricante. A chamada ilustrativa abaixo não garante suporte universal e não troca driver em todos os aparelhos:
+A classe pode ser um `object` Kotlin ou ter construtor público sem parâmetros. Mantenha os quatro campos (`id`, `name`, `version`, `category`) iguais aos do manifesto. Evite text input livre em comandos shell; valide qualquer parâmetro e mostre o resultado ao usuário.
 
-```kotlin
-val result = hostApi.executeShell("cmd game set --mode 2 --downscale 0.80 com.exemplo.jogo")
+## 3. Crie o manifesto e o ícone
+
+Salve `manifest.json` e `icon.png` em `plugin-example/src/main/plugin/`. Use os mesmos valores declarados pela classe:
+
+```json
+{
+  "formatVersion": 1,
+  "apiVersion": 1,
+  "id": "com.example.svbooster.gpu",
+  "name": "GPU experimental",
+  "version": "1.0.0",
+  "category": "RENDERIZACAO",
+  "entryClass": "com.example.svbooster.gpu.GpuPlugin",
+  "icon": "icon.png"
+}
 ```
 
-O exemplo `:plugin-optimization` filtra o nome do pacote para caracteres permitidos antes de formar a chamada. Não concatene texto livre recebido de rede, arquivo ou campo de usuário em comandos shell.
+O PNG pode ter até 512 × 512 pixels. Categorias: `OTIMIZACAO`, `RENDERIZACAO`, `REDE`, `MONITORAMENTO`, `AUTOMACAO`, `EXPERIMENTAL`.
 
-## 3. Registre o plugin
+## 4. Compile e empacote
 
-Registre-o no `PluginRegistry` do host ou use o ponto de entrada que o adaptador WX vier a definir. Nesta versão, o registro é em tempo de build e as categorias visíveis são derivadas dos plugins registrados. Isso não representa descoberta automática de APKs instalados.
+```sh
+./gradlew :plugin-example:assembleDebug
+python3 tools/package_plgs.py \
+  --apk plugin-example/build/outputs/apk/debug/plugin-example-debug.apk \
+  --manifest plugin-example/src/main/plugin/manifest.json \
+  --icon plugin-example/src/main/plugin/icon.png \
+  --output dist/gpu-experimental.plgs
+```
 
-## 4. Compile e teste
+O empacotador inclui somente `classes.dex`, `manifest.json` e `icon.png`. Compartilhe o arquivo `.plgs`; o APK de debug é apenas um insumo do build e não deve ser instalado pelo usuário.
 
-- `./gradlew :plugin-example:build` compila o módulo.
-- `./gradlew :app:assembleDebug` compila o host com o módulo incluído.
-- Instale o APK de debug gerado pelo host e teste em aparelho real com uma cópia de segurança e um jogo não crítico.
-- Sem Shizuku/root/Depuração por Wi-Fi autorizada, `executeShell` deve falhar com diagnóstico retornado; mostre esse resultado ao usuário.
+## Segurança e compatibilidade
 
-## Boas práticas
+O carregamento dinâmico **não é um sandbox**: o DEX executa dentro do processo do host e pode usar a mesma identidade/acessos do app. A extensão `.plgs` e as validações estruturais não comprovam autoria nem assinatura. Distribua apenas plugins revisados e de origem confiável; não execute código ou shell recebido de uma URL sem validação e consentimento.
 
-- Peça confirmação explícita antes de aplicar um ajuste persistente.
-- Prefira operações idempotentes, reversíveis e com restauração automática ao fechar o jogo.
-- Use `GameLifecycleListener` para desfazer ajustes que dependem da sessão de jogo.
-- Informe claramente limitações de fabricante, versão Android, root e permissões.
-- Não declare permissões perigosas no plugin para contornar o host. A ponte host é o local de controle e deve ser auditada.
-- Nunca execute scripts recebidos de uma URL sem validação, assinatura e consentimento.
+Peça confirmação para ajustes persistentes, prefira operações idempotentes e reversíveis, e restaure as alterações quando o jogo terminar. `HostApi` é uma ponte de integração, não uma fronteira de segurança contra código malicioso.

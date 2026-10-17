@@ -1,61 +1,35 @@
-# SvBooster Beta — plugins da comunidade
+# SvBooster Beta — plugins `.plgs`
 
-Guia para entender a arquitetura, criar módulos e importar plugins no SvBooster.
+Guia para entender o formato de plugin, criar pacotes e importar pelo app.
 
 ## Como funciona
 
-O host apresenta Início, uma aba por `PluginCategory` registrada e Ajustes. Cada plugin implementa `SvPlugin`, que fornece identificador, nome, versão, categoria e uma tela Compose. O host chama essa tela e entrega uma instância de `HostApi`, a ponte para permissões Shizuku, comandos de shell, perfil de jogo, eventos de ciclo de vida e sobreposição.
+A barra inferior mostra Início, Ajustes e **uma aba por plugin**. Cada aba usa o nome e o ícone PNG declarados no pacote. Os plugins implementam `SvPlugin` e desenham a tela com Compose; a ponte `HostApi` disponibiliza as capacidades do host.
 
-Nesta beta, o carregamento é **em tempo de compilação**: o `PluginRegistry` registra as bibliotecas `:plugin-optimization` e `:plugin-monitoring`; por isso as categorias delas aparecem na navegação. Não há ainda loja, descoberta de APK instalado ou importação de APK externo.
+Um `.plgs` é um contêiner ZIP com `manifest.json`, `classes.dex` e `icon.png`. Os exemplos `:plugin-optimization`, `:plugin-monitoring` e `:plugin-diagnostics` também são empacotados nesse formato e carregados pelo mesmo caminho dos plugins importados. Cada plugin tem uma aba e um ícone próprios; o diagnóstico executa testes Shizuku somente de leitura. O host não instala APK de plugin.
 
 ## Criar um plugin
 
-1. Crie um módulo Android Library Compose e dependa de `:plugin-api`.
-2. Implemente `SvPlugin`, escolha um `id` reverso estável e uma categoria correta.
-3. Faça a UI no método `Content(context, hostApi)` e use `HostApi` para capacidades do host.
-4. Inclua o módulo em `settings.gradle.kts`, adicione-o às dependências de `:app` e registre-o no `PluginRegistry`.
-5. Compile `./gradlew :app:assembleDebug` e teste em um aparelho real.
+1. Crie um módulo Android/Kotlin com Compose e dependa de `:plugin-api` e das bibliotecas Compose como `compileOnly`.
+2. Implemente `SvPlugin`, com ID reverso e versão estável.
+3. Crie `manifest.json` e `icon.png` com os mesmos metadados da classe.
+4. Compile um APK de debug do módulo apenas para gerar `classes.dex` e empacote-o com `tools/package_plgs.py`.
+5. Copie o `.plgs` ao celular e importe-o em **Ajustes → Plugins**.
 
-Exemplo mínimo:
+Passos completos: [Criar plugins](PLUGIN_GUIDE.md) · [Importar `.plgs`](IMPORTAR_PLUGINS.md) · [Contrato `HostApi`](PLUGIN_API.md).
 
-```kotlin
-object GpuExample : SvPlugin {
-    override val id = "org.exemplo.svbooster.gpu"
-    override val name = "GPU"
-    override val version = "1.0.0"
-    override val category = PluginCategory.RENDERIZACAO
+## Validação do pacote
 
-    @Composable
-    override fun Content(context: Context, hostApi: HostApi) {
-        val scope = rememberCoroutineScope()
-        Button(onClick = {
-            scope.launch { hostApi.executeShell("cmd game list") }
-        }) { Text("Consultar jogos") }
-    }
-}
-```
+O app exige extensão `.plgs`, `formatVersion=1`, `apiVersion=1`, exatamente os três arquivos previstos, categoria conhecida, IDs únicos e limites de tamanho. Outros arquivos, incluindo APKs e ZIPs comuns, são recusados.
 
-Guia completo: [Criar um primeiro plugin](PLUGIN_GUIDE.md). Referência de contrato e capacidades: [HostApi](PLUGIN_API.md).
+## Segurança
 
-## Importar plugins
+`.plgs` **não é sandbox nem assinatura de confiança**. O DEX roda dentro do processo do host e pode usar a identidade e os acessos do app. Importe apenas arquivos cujo código e origem você confia. Não execute comandos shell sem validação, consentimento, limite de tempo e plano de reversão.
 
-Para esta beta, “importar” significa adicionar o **código-fonte confiável** como um módulo Gradle, incluir sua dependência no host e registrar a implementação. Depois recompila-se e reinstala-se o APK do host. O plugin não é instalado nem removido separadamente.
+## Status do WXDynamicPlugin
 
-**Importar APK diretamente pelo app ainda não é suportado.** Esse fluxo depende de configurar o runtime WXDynamicPlugin, distribuição e versionamento, verificação de assinatura, compatibilidade do contrato e rollback. Até lá, não instale APKs esperando que apareçam automaticamente. Passo a passo: [Importar plugins](IMPORTAR_PLUGINS.md) e [estado do runtime WX](WX_RUNTIME.md).
-
-## Segurança e boas práticas
-
-Plugins executam código dentro do processo do host; `HostApi` não é uma sandbox. Use fontes auditáveis, comandos seguros, idempotentes e reversíveis, e descreva os riscos. Não concatene entrada não confiável em comandos shell; peça autorização explícita para alterações e restaure os ajustes quando a sessão de jogo terminar.
+WXDynamicPlugin não é usado pelo carregador atual; continua apenas como uma alternativa avaliada. Detalhes e limites: [runtime e segurança](WX_RUNTIME.md).
 
 ## Roadmap
 
-| Categoria | Ideias para a comunidade |
-|---|---|
-| Otimização | Downscale, limite de FPS, perfis e limpeza consciente |
-| Renderização | Drivers gráficos, DPI e diagnóstico AOT, quando suportado |
-| Rede | Latência, jitter e modos Wi-Fi compatíveis |
-| Monitoramento | HUD, frame time, CPU/RAM e térmica, dentro das APIs disponíveis |
-| Automação | Perfis por pacote, detecção OEM e rotinas pré-jogo |
-| Experimental | Integrações root/Magisk/KernelSU e tweaks reversíveis |
-
-Detalhes: [roadmap e compatibilidade](ROADMAP.md).
+[Compatibilidade, ideias e boas práticas](ROADMAP.md).

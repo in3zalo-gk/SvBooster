@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.library")
+    id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
@@ -7,7 +7,11 @@ plugins {
 android {
     namespace = "com.svbooster.plugin.monitoring"
     compileSdk = 35
-    defaultConfig { minSdk = 26 }
+    defaultConfig {
+        applicationId = "com.svbooster.plugin.monitoring.packagebuilder"
+        minSdk = 26
+        targetSdk = 35
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -17,9 +21,10 @@ android {
 }
 
 dependencies {
-    implementation(project(":plugin-api"))
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.ui:ui")
+    // API and Compose are supplied by the host at runtime; they must not be duplicated in plugin DEX.
+    compileOnly(project(":plugin-api"))
+    compileOnly(platform("androidx.compose:compose-bom:2024.12.01"))
+    compileOnly("androidx.compose.material3:material3")
+    compileOnly("androidx.compose.foundation:foundation")
+    compileOnly("androidx.compose.ui:ui")
 }

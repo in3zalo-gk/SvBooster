@@ -7,8 +7,8 @@ A API está em `plugin-api/src/main/java/com/svbooster/pluginapi/SvPlugin.kt`. M
 - `id: String`: identificador estável e globalmente único (use domínio reverso).
 - `name: String`: nome para a navegação.
 - `version: String`: versão do plugin.
-- `category: PluginCategory`: grupo exibido como aba dinâmica.
-- `Content(context, hostApi)`: tela Compose raiz. O host chama o composable dentro da aba da categoria.
+- `category: PluginCategory`: categoria registrada no contrato. No app, cada plugin usa uma aba própria na barra inferior.
+- `Content(context, hostApi)`: tela Compose raiz. O host chama o composable dentro da aba individual do plugin.
 
 Categorias disponíveis: `OTIMIZACAO`, `RENDERIZACAO`, `REDE`, `MONITORAMENTO`, `AUTOMACAO` e `EXPERIMENTAL`.
 
@@ -17,7 +17,7 @@ Categorias disponíveis: `OTIMIZACAO`, `RENDERIZACAO`, `REDE`, `MONITORAMENTO`, 
 | Método | Uso e retorno | Requisito / observações |
 |---|---|---|
 | `requestShizukuPermission(): Boolean` | Retorna `true` se já estiver autorizado; caso contrário, dispara o pedido e retorna `false`. | Shizuku instalado, binder em execução e decisão do usuário. Reavalie depois que a tela de autorização fechar. |
-| `suspend executeShell(command): ShellResult` | Suspende até terminar e retorna `exitCode`, `stdout`, `stderr` e `success`. | Shizuku, modo ADB próprio ou root; o Android/fabricante ainda pode negar o comando. Chamar de coroutine, não bloquear a UI. |
+| `suspend executeShell(command): ShellResult` | Suspende até terminar e retorna `exitCode`, `stdout`, `stderr` e `success`. | Shizuku, modo ADB próprio ou root; cada chamada tem timeout de 8 segundos e o Android/fabricante ainda pode negar o comando. Chamar de coroutine, não bloquear a UI. `:plugin-diagnostics` mostra status, tempo e erro por chamada. |
 | `showOverlay(content)` | Exibe um composable no serviço de sobreposição do host. | Permissão Android “Exibir sobre outros apps” e serviço foreground disponível. O overlay é arrastável pelo HUD nativo; o conteúdo customizado fica em janela tocável. |
 | `hideOverlay()` | Para o serviço de overlay do host. | Não requer permissão adicional. |
 | `getGameProfile()` | Perfil selecionado mais recentemente, ou `null` se nenhum jogo tiver sido selecionado. | A estrutura atual retorna pacote, downscale, FPS (se definido) e preset (ainda nulo). |
@@ -33,4 +33,4 @@ Categorias disponíveis: `OTIMIZACAO`, `RENDERIZACAO`, `REDE`, `MONITORAMENTO`, 
 
 ## Segurança e permissões
 
-Os plugins de exemplo não solicitam permissões privilegiadas próprias. O host declara e gerencia as permissões necessárias ao seu funcionamento. A permissão de sobreposição continua sendo uma autorização explícita Android do usuário. `HostApi` não é sandbox: um plugin carregado no mesmo processo pode executar código Kotlin com as capacidades do host. Distribua somente artefatos confiáveis, valide assinatura/origem no futuro carregador e nunca trate `executeShell` como uma fronteira de segurança suficiente.
+O pacote `.plgs` usa `formatVersion=1` e `apiVersion=1`, com manifesto, `classes.dex` e ícone PNG. O host confere formato e metadados antes de carregar o DEX pelo classloader Android. Isso não valida autoria: a implementação não é sandbox e não verifica assinatura criptográfica. Código de plugin é executado no processo do app e pode usar os acessos do host. Importe somente pacotes de origem confiável e nunca trate `HostApi` ou `executeShell` como fronteira de segurança.

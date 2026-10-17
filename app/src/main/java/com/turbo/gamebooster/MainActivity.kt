@@ -1,11 +1,18 @@
 package com.turbo.gamebooster
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,27 +22,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,19 +48,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
-import com.svbooster.pluginapi.PluginCategory
 import com.svbooster.pluginapi.SvPlugin
 import com.turbo.gamebooster.core.Booster
 import com.turbo.gamebooster.core.Prefs
 import com.turbo.gamebooster.core.Shortcuts
 import com.turbo.gamebooster.core.SystemInfo
+import com.turbo.gamebooster.plugins.LoadedPlugin
 import com.turbo.gamebooster.plugins.PluginHostApi
+import com.turbo.gamebooster.plugins.PluginPackageManager
 import com.turbo.gamebooster.plugins.PluginRegistry
 import com.turbo.gamebooster.shell.AdbShell
 import com.turbo.gamebooster.shell.Shell
@@ -141,11 +151,64 @@ private fun App(tick: Int, refresh: () -> Unit) {
     var screen by remember { mutableStateOf<Screen>(Screen.Tabs) }
     var selectedPage by rememberSaveable { mutableStateOf("home") }
     var subPage by rememberSaveable { mutableStateOf("games") }
+    var pluginMessage by remember { mutableStateOf<String?>(null) }
+    var pluginsReady by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val mode = remember(tick) { Shell.mode() }
-    val plugins = PluginRegistry.plugins
-    val categories = plugins.map { it.category }.distinct()
+    val pluginEntries = PluginRegistry.entries
+    val pluginIds = pluginEntries.map { it.plugin.id }
     val hostApi = remember(context) { PluginHostApi(context) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val loaded = withContext(Dispatchers.IO) {
+                PluginPackageManager.loadInstalled(context.applicationContext)
+            }
+            PluginRegistry.replaceAll(loaded.plugins)
+            pluginMessage = loaded.errors.takeIf { it.isNotEmpty() }?.joinToString("\n")
+        } catch (t: Throwable) {
+            pluginMessage = "Falha ao iniciar plugins: ${t.message ?: "erro inesperado"}"
+        } finally {
+            pluginsReady = true
+        }
+    }
+    LaunchedEffect(pluginIds) {
+        if (selectedPage.startsWith("plugin:") && selectedPage.removePrefix("plugin:") !in pluginIds) {
+            selectedPage = "home"
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val existingIds = PluginRegistry.entries.map { it.plugin.id }.toSet()
+            pluginMessage = "Validando pacote .plgs…"
+            scope.launch {
+                try {
+                    val loaded = withContext(Dispatchers.IO) {
+                        PluginPackageManager.importPlugin(context.applicationContext, uri, existingIds)
+                    }
+                    PluginRegistry.add(loaded)
+                    selectedPage = "plugin:${loaded.plugin.id}"
+                    pluginMessage = "${loaded.plugin.name} importado."
+                } catch (t: Throwable) {
+                    pluginMessage = t.message ?: "Não foi possível importar esse .plgs."
+                }
+            }
+        }
+    }
+
+    val removePlugin: (LoadedPlugin) -> Unit = { entry ->
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { PluginPackageManager.removePlugin(context.applicationContext, entry) }
+                PluginRegistry.remove(entry.plugin.id)
+                pluginMessage = "${entry.plugin.name} removido. Reinicie o app para descarregar completamente o código."
+            } catch (t: Throwable) {
+                pluginMessage = t.message ?: "Não foi possível remover o plugin."
+            }
+        }
+    }
 
     when (val current = screen) {
         is Screen.Profile -> ProfileScreen(
@@ -160,29 +223,22 @@ private fun App(tick: Int, refresh: () -> Unit) {
             topBar = { Header(mode) },
             bottomBar = {
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    NavigationBarItem(
-                        selected = selectedPage == "home",
-                        onClick = { selectedPage = "home" },
-                        icon = { Icon(Icons.Filled.SportsEsports, null) },
-                        label = { Text("Início", maxLines = 1, fontSize = 11.sp) },
-                        colors = navColors()
-                    )
-                    categories.forEach { category ->
-                        NavigationBarItem(
-                            selected = selectedPage == category.name,
-                            onClick = { selectedPage = category.name },
-                            icon = { Icon(categoryIcon(category), null) },
-                            label = { Text(category.title, maxLines = 1, fontSize = 10.sp) },
-                            colors = navColors()
-                        )
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BottomNavTab("Início", selectedPage == "home", {
+                            Icon(Icons.Filled.SportsEsports, "Início")
+                        }) { selectedPage = "home" }
+                        pluginEntries.forEach { entry ->
+                            BottomNavTab(entry.plugin.name, selectedPage == "plugin:${entry.plugin.id}", {
+                                PluginNavIcon(entry)
+                            }) { selectedPage = "plugin:${entry.plugin.id}" }
+                        }
+                        BottomNavTab("Ajustes", selectedPage == "settings", {
+                            Icon(Icons.Filled.Settings, "Ajustes")
+                        }) { selectedPage = "settings" }
                     }
-                    NavigationBarItem(
-                        selected = selectedPage == "settings",
-                        onClick = { selectedPage = "settings" },
-                        icon = { Icon(Icons.Filled.Settings, null) },
-                        label = { Text("Ajustes", maxLines = 1, fontSize = 11.sp) },
-                        colors = navColors()
-                    )
                 }
             }
         ) { pad ->
@@ -197,13 +253,29 @@ private fun App(tick: Int, refresh: () -> Unit) {
                         onSubPage = { subPage = it },
                         onRefresh = refresh
                     )
-                    selectedPage == "settings" -> SetupScreen(tick, refresh)
+                    selectedPage == "settings" -> SetupScreen(
+                        tick = tick,
+                        onChanged = refresh,
+                        plugins = pluginEntries.toList(),
+                        pluginMessage = pluginMessage,
+                        onImportPlugin = {
+                            if (pluginsReady) importLauncher.launch(arrayOf("*/*"))
+                            else pluginMessage = "Aguarde o carregamento dos plugins antes de importar outro arquivo."
+                        },
+                        onRemovePlugin = removePlugin
+                    )
                     else -> {
-                        val category = categories.firstOrNull { it.name == selectedPage }
-                        val categoryPlugins = plugins.filter { it.category == category }
-                        Column(Modifier.fillMaxSize()) {
-                            categoryPlugins.forEach { plugin -> PluginScreen(plugin, hostApi) }
-                        }
+                        val entry = pluginEntries.firstOrNull { "plugin:${it.plugin.id}" == selectedPage }
+                        if (entry != null) PluginScreen(entry, hostApi)
+                        else HomeDashboard(
+                            tick = tick,
+                            onOpenGame = { screen = Screen.Profile(it) },
+                            onAddGame = { screen = Screen.Picker },
+                            onSetup = { selectedPage = "settings" },
+                            subPage = subPage,
+                            onSubPage = { subPage = it },
+                            onRefresh = refresh
+                        )
                     }
                 }
             }
@@ -212,23 +284,46 @@ private fun App(tick: Int, refresh: () -> Unit) {
 }
 
 @Composable
-private fun navColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Color.Black,
-    indicatorColor = Neon
-)
-
-private fun categoryIcon(category: PluginCategory): ImageVector = when (category) {
-    PluginCategory.OTIMIZACAO -> Icons.Filled.Bolt
-    PluginCategory.MONITORAMENTO -> Icons.Filled.Build
-    else -> Icons.Filled.Folder
+private fun BottomNavTab(label: String, selected: Boolean, icon: @Composable () -> Unit, onClick: () -> Unit) {
+    Column(
+        Modifier.width(78.dp).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            Modifier.width(42.dp).height(26.dp).clip(RoundedCornerShape(14.dp))
+                .background(if (selected) Neon else Color.Transparent),
+            contentAlignment = Alignment.Center
+        ) { icon() }
+        Text(
+            label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 9.sp,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else Muted
+        )
+    }
 }
 
 @Composable
-private fun PluginScreen(plugin: SvPlugin, hostApi: PluginHostApi) {
+private fun PluginNavIcon(entry: LoadedPlugin) {
+    val bitmap = remember(entry.iconFile.absolutePath) {
+        BitmapFactory.decodeFile(entry.iconFile.absolutePath)?.asImageBitmap()
+    }
+    if (bitmap != null) {
+        Image(bitmap, contentDescription = entry.plugin.name, modifier = Modifier.size(20.dp))
+    } else {
+        Icon(Icons.Filled.Extension, contentDescription = entry.plugin.name, tint = Color.Black, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun PluginScreen(entry: LoadedPlugin, hostApi: PluginHostApi) {
     val context = LocalContext.current
     Column(Modifier.fillMaxSize()) {
-        Text(plugin.name, modifier = Modifier.padding(start = 18.dp, top = 16.dp), fontWeight = FontWeight.Bold)
-        plugin.Content(context, hostApi)
+        Text(entry.plugin.name, modifier = Modifier.padding(start = 18.dp, top = 16.dp), fontWeight = FontWeight.Bold)
+        Text("v${entry.plugin.version}", modifier = Modifier.padding(start = 18.dp, top = 2.dp), color = Muted, fontSize = 12.sp)
+        entry.plugin.Content(context, hostApi)
     }
 }
 
